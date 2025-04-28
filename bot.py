@@ -204,3 +204,9 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+"""
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-2.0-flash-exp")
+chat = model.start_chat(history=[])
+"""
