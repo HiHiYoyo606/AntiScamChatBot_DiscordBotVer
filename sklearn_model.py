@@ -1,7 +1,7 @@
-import os, asyncio
+import os
 import joblib
-import pandas as pd
 import google.generativeai as genai
+import pandas as pd
 from dotenv import load_dotenv
 from googletrans import Translator
 from sklearn.model_selection import train_test_split
@@ -67,7 +67,7 @@ class Classifiers:
         pass
 
     @staticmethod
-    def __train_models__() -> tuple:
+    def __train_models__(only_vectorizer=False) -> tuple:
         """
         Train all the sklearn models.
 
@@ -116,6 +116,9 @@ class Classifiers:
             X_train_tfidf = vectorizer.fit_transform(X_train)
             X_test_tfidf = vectorizer.transform(X_test)
 
+            if only_vectorizer:
+                return None, None, None, vectorizer
+
             classifiers = {
                 "LRclassifier": LRclassifier,
                 "SVCclassifier": SVCclassifier,
@@ -135,7 +138,17 @@ class Classifiers:
             return None, None, None, None
 
     @staticmethod
-    def save_data_and_models(regenerate_models=False):
+    def save_data_and_models(regenerate_models=False, regenerate_vectorizer=False, get_data=False):
+        """
+        Save training data and trained models.
+
+        Parameters:
+            regenerate_models: bool
+
+        Return:
+            None        
+        """
+
         models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
         if not os.path.exists(models_dir):
             os.makedirs(models_dir)
@@ -143,63 +156,64 @@ class Classifiers:
         
         vectorizer_path = os.path.join(models_dir, "vectorizer.pkl")
         expected_classifier_pkls = [os.path.join(models_dir, f"{classifierKey}.pkl") for _, classifierKey, _ in model_lists]
-        all_expected_files = [vectorizer_path] + expected_classifier_pkls
+        existance_check = [
+            {"classifier": all(os.path.exists(f_path) for f_path in expected_classifier_pkls)},
+            {"vectorizer": os.path.exists(vectorizer_path)},
+            {"all_files_exist": all(os.path.exists(f_path) for f_path in expected_classifier_pkls + [vectorizer_path])}
+        ]
 
-        all_files_exist = all(os.path.exists(f_path) for f_path in all_expected_files)
+        if not existance_check[0]["classifier"] or regenerate_models or regenerate_vectorizer:
+            # regenerate classfiers and vectorizer
+            if regenerate_vectorizer:
+                _, _, _, vectorizer = Classifiers.__train_models__(only_vectorizer=True)
+                joblib.dump(vectorizer, "./models/vectorizer.pkl")
+            
+            if regenerate_models:
+                classifiers, Xtfidf, Ytfidf, _ = Classifiers.__train_models__()
+                for name, model_obj in classifiers.items():
+                    model_file_path = os.path.join(models_dir, f"{name}.pkl")
+                    joblib.dump(model_obj, model_file_path)
 
-        if not regenerate_models and all_files_exist:
-            print("Models and vectorizer already exist and regenerate_models is False. Skipping generation and saving.")
-            # Optionally, load and print accuracy if accuracy.csv exists
+                accuracy_data = []
+                if Xtfidf is None or Ytfidf is None:
+                    print("Xtfidf or Ytfidf is not available from training. Skipping accuracy calculation.")
+                else:
+                    for model_name, classifierKey, _ in model_lists:
+                        if classifierKey in classifiers:
+                            test_classifier = classifiers[classifierKey]
+                            y_pred = test_classifier.predict(Xtfidf)
+
+                            accuracy = accuracy_score(Ytfidf, y_pred) * 100
+                            recall = recall_score(Ytfidf, y_pred) * 100
+                            precision = precision_score(Ytfidf, y_pred) * 100
+                            accuracy_data.append({
+                                "模型 Model": model_name,
+                                "準確度 Accuracy": f"{accuracy:.2f}%",
+                                "召回率 Recall": f"{recall:.2f}%",
+                                "精準度 Precision": f"{precision:.2f}%"
+                            })
+                        else:
+                            print(f"Classifier {classifierKey} not found in trained models. Skipping for accuracy calculation.")
+
+                if accuracy_data:
+                    accuracy_df = pd.DataFrame(accuracy_data)
+                    accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
+                    accuracy_df.to_csv(accuracy_csv_path, index=False)
+                    print(f"Accuracy data saved to {accuracy_csv_path}")
+                    print("Updated accuracy data:\n", accuracy_df.to_string())
+                else:
+                    print("No accuracy data to save (possibly due to missing classifiers or no models trained).")
+                        
+                    print(f"All classifier models and vectorizer saved to {models_dir}")
+
+        if get_data:
             accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
             if os.path.exists(accuracy_csv_path):
                 try:
                     accuracy_df = pd.read_csv(accuracy_csv_path)
                     print("Existing accuracy data:\n", accuracy_df.to_string())
                 except Exception as e:
-                    print(f"Could not read existing accuracy.csv: {e}")
-            return
-
-        print(f"Proceeding with model training and saving. regenerate_models: {regenerate_models}, all_files_exist: {all_files_exist}")
-        
-        classifiers, Xtfidf, Ytfidf, vectorizer = Classifiers.__train_models__()
-        if not classifiers:
-            return
-        
-        joblib.dump(vectorizer, "./models/vectorizer.pkl")
-        for name, model_obj in classifiers.items():
-            model_file_path = os.path.join(models_dir, f"{name}.pkl")
-            joblib.dump(model_obj, model_file_path)
-        print(f"All classifier models saved to {models_dir}")
-
-        accuracy_data = []
-        if Xtfidf is None or Ytfidf is None:
-            print("Xtfidf or Ytfidf is not available from training. Skipping accuracy calculation.")
-        else:
-            for model_name, classifierKey, _ in model_lists:
-                if classifierKey in classifiers:
-                    test_classifier = classifiers[classifierKey]
-                    y_pred = test_classifier.predict(Xtfidf)
-
-                    accuracy = accuracy_score(Ytfidf, y_pred) * 100
-                    recall = recall_score(Ytfidf, y_pred) * 100
-                    precision = precision_score(Ytfidf, y_pred) * 100
-                    accuracy_data.append({
-                        "模型 Model": model_name,
-                        "準確度 Accuracy": f"{accuracy:.2f}%",
-                        "召回率 Recall": f"{recall:.2f}%",
-                        "精準度 Precision": f"{precision:.2f}%"
-                    })
-                else:
-                    print(f"Classifier {classifierKey} not found in trained models. Skipping for accuracy calculation.")
-
-        if accuracy_data:
-            accuracy_df = pd.DataFrame(accuracy_data)
-            accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
-            accuracy_df.to_csv(accuracy_csv_path, index=False)
-            print(f"Accuracy data saved to {accuracy_csv_path}")
-            print("Updated accuracy data:\n", accuracy_df.to_string())
-        else:
-            print("No accuracy data to save (possibly due to missing classifiers or no models trained).")
+                    print(f"Could not read existing accuracy.csv: {e}")       
 
 class MainFunction:
     def __init__(self):
@@ -239,7 +253,7 @@ class MainFunction:
             AiJudgePercentageRate = 1
 
             # Model Analysis
-            vectorizer = TfidfVectorizer()
+            vectorizer = joblib.load("./models/vectorizer.pkl")
             question_tfidf = vectorizer.transform([translation])
             results_data = []
 
@@ -312,4 +326,4 @@ class MainFunction:
             print(f"An error occured in get_label: {e}")
     
 if __name__ == "__main__":
-    Classifiers.save_data_and_models(regenerate_models=False)
+    Classifiers.save_data_and_models(regenerate_models=True, regenerate_vectorizer=True, get_data=True)
