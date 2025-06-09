@@ -217,100 +217,97 @@ class MainFunction:
 
         Parameters:
             message: str
-            models: list
-            classifiers: dict
-            Xtfidf: list
-            Ytfidf: list
-            vectorizer: TfidfVectorizer
-            translator: Translator
 
         Return:
             result_row
         """
         
-        # Translation and AI Judgement
-        translator = joblib.load("./models/translator.pkl")
-        translation = asyncio.run(HelperFunctions.Translate(translator, message))
-        
-        AiJudgement = HelperFunctions.AskingQuestion(f"""How much percentage do you think this message is a spamming message (only consider this message, not considering other environmental variation)? 
-            Answer in this format: "N" where N is a float between 0-100 (13.62, 85.72, 50.60, 5.67, 100.00, 0.00 etc.)
-            message: {translation}""")
+        try:
+            # Translation and AI Judgement
+            translator = joblib.load("./models/translator.pkl")
+            translation = asyncio.run(HelperFunctions.Translate(translator, message))
+            
+            AiJudgement = HelperFunctions.AskingQuestion(f"""How much percentage do you think this message is a spamming message (only consider this message, not considering other environmental variation)? 
+                Answer in this format: "N" where N is a float between 0-100 (13.62, 85.72, 50.60, 5.67, 100.00, 0.00 etc.)
+                message: {translation}""")
 
-        AiJudgePercentage = float(AiJudgement)
-        AiJudgePercentageRate = 1
+            AiJudgePercentage = float(AiJudgement)
+            AiJudgePercentageRate = 1
 
-        # Model Analysis
-        vectroizer = joblib.load("./models/vectorizer.pkl")
-        question_tfidf = vectroizer.transform([translation])
-        results_data, result_row = [], []
+            # Model Analysis
+            vectroizer = joblib.load("./models/vectorizer.pkl")
+            question_tfidf = vectroizer.transform([translation])
+            results_data, result_row = [], []
 
-        # Load .pkl models from ./models/ directory
-        classifiers = {}
-        # Construct path relative to the current file to find the "models" directory
-        models_load_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+            # Load .pkl models from ./models/ directory
+            classifiers = {}
+            # Construct path relative to the current file to find the "models" directory
+            models_load_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
 
-        if os.path.exists(models_load_dir) and os.path.isdir(models_load_dir):
-            for pkl_filename in os.listdir(models_load_dir):
-                if pkl_filename.endswith(".pkl"):
-                    classifier_name_key = pkl_filename[:-4]  # Remove .pkl extension
-                    model_file_path = os.path.join(models_load_dir, pkl_filename)
-                    try:
-                        classifiers[classifier_name_key] = joblib.load(model_file_path)
-                        # print(f"Successfully loaded model: {classifier_name_key} from {model_file_path}") # Optional: for debugging
-                    except Exception as e:
-                        print(f"Error loading model {model_file_path}: {e}")
-                        pass
-                        # Decide how to handle: skip this model, raise error, etc.
-        else:
-            print(f"Models directory not found: {models_load_dir}. No sklearn models will be loaded for prediction.")
+            if os.path.exists(models_load_dir) and os.path.isdir(models_load_dir):
+                for pkl_filename in os.listdir(models_load_dir):
+                    if pkl_filename.endswith(".pkl"):
+                        classifier_name_key = pkl_filename[:-4]  # Remove .pkl extension
+                        model_file_path = os.path.join(models_load_dir, pkl_filename)
+                        try:
+                            classifiers[classifier_name_key] = joblib.load(model_file_path)
+                            # print(f"Successfully loaded model: {classifier_name_key} from {model_file_path}") # Optional: for debugging
+                        except Exception as e:
+                            print(f"Error loading model {model_file_path}: {e}")
+                            pass
+                            # Decide how to handle: skip this model, raise error, etc.
+            else:
+                print(f"Models directory not found: {models_load_dir}. No sklearn models will be loaded for prediction.")
 
-        for model_name, classifierKey, rate in model_lists:
-            working_classifier = classifiers[classifierKey]
-            spam_proba, ham_proba = HelperFunctions.get_prediction_proba(working_classifier, question_tfidf)
+            for model_name, classifierKey, rate in model_lists:
+                working_classifier = classifiers[classifierKey]
+                spam_proba, ham_proba = HelperFunctions.get_prediction_proba(working_classifier, question_tfidf)
+                results_data.append({
+                    "模型 Model": model_name,
+                    "結果 Result": HelperFunctions.RedefineLabel(spam_proba),
+                    "加權倍率 Rate": rate,
+                    "詐騙訊息機率 Scam Probability": f"{spam_proba:.2f}%",
+                    "普通訊息機率 Normal Probability": f"{ham_proba:.2f}%"
+                })
+
+            # Add Gemini results
             results_data.append({
-                "模型 Model": model_name,
-                "結果 Result": HelperFunctions.RedefineLabel(spam_proba),
-                "加權倍率 Rate": rate,
-                "詐騙訊息機率 Scam Probability": f"{spam_proba:.2f}%",
-                "普通訊息機率 Normal Probability": f"{ham_proba:.2f}%"
+                "模型 Model": "Google Gemini",
+                "結果 Result": HelperFunctions.RedefineLabel(AiJudgePercentage),
+                "加權倍率 Rate": AiJudgePercentageRate,
+                "詐騙訊息機率 Scam Probability": f"{AiJudgePercentage:.2f}%",
+                "普通訊息機率 Normal Probability": f"{100.0 - AiJudgePercentage:.2f}%"
             })
 
-        # Add Gemini results
-        results_data.append({
-            "模型 Model": "Google Gemini",
-            "結果 Result": HelperFunctions.RedefineLabel(AiJudgePercentage),
-            "加權倍率 Rate": AiJudgePercentageRate,
-            "詐騙訊息機率 Scam Probability": f"{AiJudgePercentage:.2f}%",
-            "普通訊息機率 Normal Probability": f"{100.0 - AiJudgePercentage:.2f}%"
-        })
+            # Calculate final result
+            valid_results = [d for d in results_data if d["結果 Result"] not in ["Error", "Not Loaded"] and d["詐騙訊息機率 Scam Probability"] != "N/A"]
+            if not valid_results:
+                print("No valid model results to calculate final average.")
+                # Return a default or error indicator for result_row
+                return [{"模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
+                        "結果 Result": "Error - No models processed", 
+                        "加權倍率 Rate": 0, 
+                        "詐騙訊息機率 Scam Probability": "N/A", 
+                        "普通訊息機率 Normal Probability": "N/A"
+                        }]
 
-        # Calculate final result
-        valid_results = [d for d in results_data if d["結果 Result"] not in ["Error", "Not Loaded"] and d["詐騙訊息機率 Scam Probability"] != "N/A"]
-        if not valid_results:
-            print("No valid model results to calculate final average.")
-            # Return a default or error indicator for result_row
-            return [{"模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
-                     "結果 Result": "Error - No models processed", 
-                     "加權倍率 Rate": 0, 
-                     "詐騙訊息機率 Scam Probability": "N/A", 
-                     "普通訊息機率 Normal Probability": "N/A"
-                     }]
+            spam_percentages = [float(d["詐騙訊息機率 Scam Probability"].rstrip('%')) for d in valid_results]
+            rates = [d["加權倍率 Rate"] for d in valid_results]
+            final_spam_percentage = HelperFunctions.Average(spam_percentages, rates)
+            final_ham_percentage = 100.0 - final_spam_percentage
 
-        spam_percentages = [float(d["詐騙訊息機率 Scam Probability"].rstrip('%')) for d in valid_results]
-        rates = [d["加權倍率 Rate"] for d in valid_results]
-        final_spam_percentage = HelperFunctions.Average(spam_percentages, rates)
-        final_ham_percentage = 100.0 - final_spam_percentage
+            # Add final result
+            result_row.append({
+                "模型 Model": "加權平均分析結果 Weighted Average Analysis Result",
+                "結果 Result": HelperFunctions.RedefineLabel(final_spam_percentage),
+                "加權倍率 Rate": sum(rates),
+                "詐騙訊息機率 Scam Probability": f"{final_spam_percentage:.2f}%",
+                "普通訊息機率 Normal Probability": f"{final_ham_percentage:.2f}%"
+            })
 
-        # Add final result
-        result_row.append({
-            "模型 Model": "加權平均分析結果 Weighted Average Analysis Result",
-            "結果 Result": HelperFunctions.RedefineLabel(final_spam_percentage),
-            "加權倍率 Rate": sum(rates),
-            "詐騙訊息機率 Scam Probability": f"{final_spam_percentage:.2f}%",
-            "普通訊息機率 Normal Probability": f"{final_ham_percentage:.2f}%"
-        })
-
-        return result_row
+            return result_row
+        except Exception as e:
+            print(f"An error occured in get_label: {e}")
     
 if __name__ == "__main__":
     Classifiers.save_data_and_models(regenerate_models=False)
