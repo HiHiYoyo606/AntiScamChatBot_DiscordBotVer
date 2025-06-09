@@ -14,7 +14,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import StackingClassifier, RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 
-class MainFunctions:
+class HelperFunctions:
     @staticmethod
     def Average(numList, rateList):
         total = 0
@@ -80,6 +80,7 @@ class Classifiers:
         
         # Models and configuration
         vectorizer = TfidfVectorizer()
+        translator = Translator()
         LRclassifier = LogisticRegression(n_jobs=-1)
         SVCclassifier = CalibratedClassifierCV(LinearSVC(dual=False), n_jobs=-1)
         NBclassifier = MultinomialNB(alpha=0.08451, fit_prior=True)
@@ -130,9 +131,9 @@ class Classifiers:
                 classifier.fit(X_train_tfidf, y_train)
                 print(f"{name} is trained.")
 
-            return classifiers, X_test_tfidf, y_test, vectorizer
+            return classifiers, X_test_tfidf, y_test, vectorizer, translator
         except Exception as e:
-            return None, None, None, None
+            return None, None, None, None, None
 
     @staticmethod
     def save_data_and_models(regenerate_models=False):
@@ -141,9 +142,9 @@ class Classifiers:
             os.makedirs(models_dir)
             print(f"Created models directory: {models_dir}")
         
-        vectorizer_path = os.path.join(models_dir, "vectorizer.pkl")
+        vectorizer_path, translator_path = os.path.join(models_dir, "vectorizer.pkl"), os.path.join(models_dir, "translator.pkl")
         expected_classifier_pkls = [os.path.join(models_dir, f"{classifierKey}.pkl") for _, classifierKey, _ in model_lists]
-        all_expected_files = [vectorizer_path] + expected_classifier_pkls
+        all_expected_files = [vectorizer_path, translator_path] + expected_classifier_pkls
 
         all_files_exist = all(os.path.exists(f_path) for f_path in all_expected_files)
 
@@ -161,11 +162,12 @@ class Classifiers:
 
         print(f"Proceeding with model training and saving. regenerate_models: {regenerate_models}, all_files_exist: {all_files_exist}")
         
-        classifiers, Xtfidf, Ytfidf, vectorizer = Classifiers.__train_models__()
+        classifiers, Xtfidf, Ytfidf, vectorizer, translator = Classifiers.__train_models__()
         if not classifiers:
             return
         
         joblib.dump(vectorizer, "./models/vectorizer.pkl")
+        joblib.dump(translator, "./models/translator.pkl")
         for name, model_obj in classifiers.items():
             model_file_path = os.path.join(models_dir, f"{name}.pkl")
             joblib.dump(model_obj, model_file_path)
@@ -201,14 +203,13 @@ class Classifiers:
         else:
             print("No accuracy data to save (possibly due to missing classifiers or no models trained).")
 
+class MainFunction:
+    def __init__(self):
+        pass
+
     @staticmethod
     def get_label(
-            message: str, 
-            models: list, 
-            Xtfidf: list, 
-            Ytfidf: list, 
-            vectorizer: TfidfVectorizer, 
-            translator: Translator
+            message: str
         ):
         
         """
@@ -228,9 +229,10 @@ class Classifiers:
         """
         
         # Translation and AI Judgement
-        translation = asyncio.run(MainFunctions.Translate(translator, message))
+        translator = joblib.load("./models/translator.pkl")
+        translation = asyncio.run(HelperFunctions.Translate(translator, message))
         
-        AiJudgement = MainFunctions.AskingQuestion(f"""How much percentage do you think this message is a spamming message (only consider this message, not considering other environmental variation)? 
+        AiJudgement = HelperFunctions.AskingQuestion(f"""How much percentage do you think this message is a spamming message (only consider this message, not considering other environmental variation)? 
             Answer in this format: "N" where N is a float between 0-100 (13.62, 85.72, 50.60, 5.67, 100.00, 0.00 etc.)
             message: {translation}""")
 
@@ -238,7 +240,8 @@ class Classifiers:
         AiJudgePercentageRate = 1
 
         # Model Analysis
-        question_tfidf = vectorizer.transform([translation])
+        vectroizer = joblib.load("./models/vectorizer.pkl")
+        question_tfidf = vectroizer.transform([translation])
         results_data, result_row = [], []
 
         # Load .pkl models from ./models/ directory
@@ -263,10 +266,10 @@ class Classifiers:
 
         for model_name, classifierKey, rate in model_lists:
             working_classifier = classifiers[classifierKey]
-            spam_proba, ham_proba = MainFunctions.get_prediction_proba(working_classifier, question_tfidf)
+            spam_proba, ham_proba = HelperFunctions.get_prediction_proba(working_classifier, question_tfidf)
             results_data.append({
                 "模型 Model": model_name,
-                "結果 Result": MainFunctions.RedefineLabel(spam_proba),
+                "結果 Result": HelperFunctions.RedefineLabel(spam_proba),
                 "加權倍率 Rate": rate,
                 "詐騙訊息機率 Scam Probability": f"{spam_proba:.2f}%",
                 "普通訊息機率 Normal Probability": f"{ham_proba:.2f}%"
@@ -275,7 +278,7 @@ class Classifiers:
         # Add Gemini results
         results_data.append({
             "模型 Model": "Google Gemini",
-            "結果 Result": MainFunctions.RedefineLabel(AiJudgePercentage),
+            "結果 Result": HelperFunctions.RedefineLabel(AiJudgePercentage),
             "加權倍率 Rate": AiJudgePercentageRate,
             "詐騙訊息機率 Scam Probability": f"{AiJudgePercentage:.2f}%",
             "普通訊息機率 Normal Probability": f"{100.0 - AiJudgePercentage:.2f}%"
@@ -295,13 +298,13 @@ class Classifiers:
 
         spam_percentages = [float(d["詐騙訊息機率 Scam Probability"].rstrip('%')) for d in valid_results]
         rates = [d["加權倍率 Rate"] for d in valid_results]
-        final_spam_percentage = MainFunctions.Average(spam_percentages, rates)
+        final_spam_percentage = HelperFunctions.Average(spam_percentages, rates)
         final_ham_percentage = 100.0 - final_spam_percentage
 
         # Add final result
         result_row.append({
             "模型 Model": "加權平均分析結果 Weighted Average Analysis Result",
-            "結果 Result": MainFunctions.RedefineLabel(final_spam_percentage),
+            "結果 Result": HelperFunctions.RedefineLabel(final_spam_percentage),
             "加權倍率 Rate": sum(rates),
             "詐騙訊息機率 Scam Probability": f"{final_spam_percentage:.2f}%",
             "普通訊息機率 Normal Probability": f"{final_ham_percentage:.2f}%"
@@ -309,4 +312,5 @@ class Classifiers:
 
         return result_row
     
-Classifiers.save_data_and_models(regenerate_models=True)
+if __name__ == "__main__":
+    Classifiers.save_data_and_models(regenerate_models=False)
