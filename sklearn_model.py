@@ -67,7 +67,7 @@ class Classifiers:
         pass
 
     @staticmethod
-    def __train_models__(only_vectorizer=False) -> tuple:
+    def __train_models__() -> tuple:
         """
         Train all the sklearn models.
 
@@ -116,9 +116,6 @@ class Classifiers:
             X_train_tfidf = vectorizer.fit_transform(X_train)
             X_test_tfidf = vectorizer.transform(X_test)
 
-            if only_vectorizer:
-                return None, None, None, vectorizer
-
             classifiers = {
                 "LRclassifier": LRclassifier,
                 "SVCclassifier": SVCclassifier,
@@ -138,7 +135,7 @@ class Classifiers:
             return None, None, None, None
 
     @staticmethod
-    def save_data_and_models(regenerate_models=False, regenerate_vectorizer=False, get_data=False):
+    def save_data_and_models():
         """
         Save training data and trained models.
 
@@ -156,20 +153,14 @@ class Classifiers:
         
         vectorizer_path = os.path.join(models_dir, "vectorizer.pkl")
         expected_classifier_pkls = [os.path.join(models_dir, f"{classifierKey}.pkl") for _, classifierKey, _ in model_lists]
-        existance_check = [
-            {"classifier": all(os.path.exists(f_path) for f_path in expected_classifier_pkls)},
-            {"vectorizer": os.path.exists(vectorizer_path)},
-            {"all_files_exist": all(os.path.exists(f_path) for f_path in expected_classifier_pkls + [vectorizer_path])}
-        ]
+        all_requirements_path = [vectorizer_path] + expected_classifier_pkls
 
-        if not existance_check[0]["classifier"] or regenerate_models or regenerate_vectorizer:
+        existance_check = all(os.path.exists(path) for path in all_requirements_path)
+
+        if not existance_check:
             # regenerate classfiers and vectorizer
-            if regenerate_vectorizer:
-                _, _, _, vectorizer = Classifiers.__train_models__(only_vectorizer=True)
+                classifiers, Xtfidf, Ytfidf, vectorizer = Classifiers.__train_models__()
                 joblib.dump(vectorizer, "./models/vectorizer.pkl")
-            
-            if regenerate_models:
-                classifiers, Xtfidf, Ytfidf, _ = Classifiers.__train_models__()
                 for name, model_obj in classifiers.items():
                     model_file_path = os.path.join(models_dir, f"{name}.pkl")
                     joblib.dump(model_obj, model_file_path)
@@ -204,16 +195,7 @@ class Classifiers:
                 else:
                     print("No accuracy data to save (possibly due to missing classifiers or no models trained).")
                         
-                    print(f"All classifier models and vectorizer saved to {models_dir}")
-
-        if get_data:
-            accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
-            if os.path.exists(accuracy_csv_path):
-                try:
-                    accuracy_df = pd.read_csv(accuracy_csv_path)
-                    print("Existing accuracy data:\n", accuracy_df.to_string())
-                except Exception as e:
-                    print(f"Could not read existing accuracy.csv: {e}")       
+                    print(f"All classifier models and vectorizer saved to {models_dir}")      
 
 class MainFunction:
     def __init__(self):
@@ -324,6 +306,16 @@ class MainFunction:
             return result
         except Exception as e:
             print(f"An error occured in get_label: {e}")
+
+    def get_training_data():
+        models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+        accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
+        if os.path.exists(accuracy_csv_path):
+            try:
+                accuracy_df = pd.read_csv(accuracy_csv_path)
+                print("Existing accuracy data:\n", accuracy_df.to_string())
+            except Exception as e:
+                print(f"Could not read existing accuracy.csv: {e}") 
     
 if __name__ == "__main__":
-    Classifiers.save_data_and_models(regenerate_models=True, regenerate_vectorizer=True, get_data=True)
+    Classifiers.save_data_and_models()
