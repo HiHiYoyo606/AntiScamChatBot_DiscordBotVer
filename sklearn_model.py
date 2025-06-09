@@ -217,7 +217,13 @@ class MainFunction:
             message: str
 
         Return:
-            result_row
+            a dictionary includes: {
+                "模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
+                "結果 Result": "Error - No models processed", 
+                "加權倍率 Rate": 0, 
+                "詐騙訊息機率 Scam Probability": "N/A", 
+                "普通訊息機率 Normal Probability": "N/A"
+            }
         """
         
         try:
@@ -233,9 +239,9 @@ class MainFunction:
             AiJudgePercentageRate = 1
 
             # Model Analysis
-            vectroizer = joblib.load("./models/vectorizer.pkl")
-            question_tfidf = vectroizer.transform([translation])
-            results_data, result_row = [], []
+            vectorizer = TfidfVectorizer()
+            question_tfidf = vectorizer.transform([translation])
+            results_data = []
 
             # Load .pkl models from ./models/ directory
             classifiers = {}
@@ -253,7 +259,6 @@ class MainFunction:
                         except Exception as e:
                             print(f"Error loading model {model_file_path}: {e}")
                             pass
-                            # Decide how to handle: skip this model, raise error, etc.
             else:
                 print(f"Models directory not found: {models_load_dir}. No sklearn models will be loaded for prediction.")
 
@@ -282,12 +287,12 @@ class MainFunction:
             if not valid_results:
                 print("No valid model results to calculate final average.")
                 # Return a default or error indicator for result_row
-                return [{"模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
+                return {"模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
                         "結果 Result": "Error - No models processed", 
                         "加權倍率 Rate": 0, 
                         "詐騙訊息機率 Scam Probability": "N/A", 
                         "普通訊息機率 Normal Probability": "N/A"
-                        }]
+                        }
 
             spam_percentages = [float(d["詐騙訊息機率 Scam Probability"].rstrip('%')) for d in valid_results]
             rates = [d["加權倍率 Rate"] for d in valid_results]
@@ -295,15 +300,14 @@ class MainFunction:
             final_ham_percentage = 100.0 - final_spam_percentage
 
             # Add final result
-            result_row.append({
+            result = {
                 "模型 Model": "加權平均分析結果 Weighted Average Analysis Result",
                 "結果 Result": HelperFunctions.RedefineLabel(final_spam_percentage),
                 "加權倍率 Rate": sum(rates),
                 "詐騙訊息機率 Scam Probability": f"{final_spam_percentage:.2f}%",
                 "普通訊息機率 Normal Probability": f"{final_ham_percentage:.2f}%"
-            })
-
-            return result_row
+            }
+            return result
         except Exception as e:
             print(f"An error occured in get_label: {e}")
     
