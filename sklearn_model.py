@@ -134,14 +134,32 @@ class Classifiers:
         except Exception as e:
             return None, None, None, None
 
+    @staticmethod
     def save_data_and_models(regenerate_models=False):
         models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
         if not os.path.exists(models_dir):
             os.makedirs(models_dir)
             print(f"Created models directory: {models_dir}")
         
-        if not regenerate_models:
-            return 
+        vectorizer_path = os.path.join(models_dir, "vectorizer.pkl")
+        expected_classifier_pkls = [os.path.join(models_dir, f"{classifierKey}.pkl") for _, classifierKey, _ in model_lists]
+        all_expected_files = [vectorizer_path] + expected_classifier_pkls
+
+        all_files_exist = all(os.path.exists(f_path) for f_path in all_expected_files)
+
+        if not regenerate_models and all_files_exist:
+            print("Models and vectorizer already exist and regenerate_models is False. Skipping generation and saving.")
+            # Optionally, load and print accuracy if accuracy.csv exists
+            accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
+            if os.path.exists(accuracy_csv_path):
+                try:
+                    accuracy_df = pd.read_csv(accuracy_csv_path)
+                    print("Existing accuracy data:\n", accuracy_df.to_string())
+                except Exception as e:
+                    print(f"Could not read existing accuracy.csv: {e}")
+            return
+
+        print(f"Proceeding with model training and saving. regenerate_models: {regenerate_models}, all_files_exist: {all_files_exist}")
         
         classifiers, Xtfidf, Ytfidf, vectorizer = Classifiers.__train_models__()
         if not classifiers:
@@ -149,27 +167,41 @@ class Classifiers:
         
         joblib.dump(vectorizer, "./models/vectorizer.pkl")
         for name, model_obj in classifiers.items():
-            joblib.dump(model_obj, os.path.join(models_dir, f"{name}.pkl"))
-        print(f"All models saved to {models_dir}")
+            model_file_path = os.path.join(models_dir, f"{name}.pkl")
+            joblib.dump(model_obj, model_file_path)
+        print(f"All classifier models saved to {models_dir}")
 
         accuracy_data = []
-        for model_name, classifierKey, _ in model_lists:
-            test_classifier = classifiers[classifierKey]
-            y_pred = test_classifier.predict(Xtfidf)
+        if Xtfidf is None or Ytfidf is None:
+            print("Xtfidf or Ytfidf is not available from training. Skipping accuracy calculation.")
+        else:
+            for model_name, classifierKey, _ in model_lists:
+                if classifierKey in classifiers:
+                    test_classifier = classifiers[classifierKey]
+                    y_pred = test_classifier.predict(Xtfidf)
 
-            accuracy = accuracy_score(Ytfidf, y_pred) * 100
-            recall = recall_score(Ytfidf, y_pred) * 100
-            precision = precision_score(Ytfidf, y_pred) * 100
-            accuracy_data.append({
-                "模型 Model": model_name, 
-                "準確度 Accuracy": accuracy,
-                "召回率 Recall": recall,
-                "精準度 Precision": precision
-            })
+                    accuracy = accuracy_score(Ytfidf, y_pred) * 100
+                    recall = recall_score(Ytfidf, y_pred) * 100
+                    precision = precision_score(Ytfidf, y_pred) * 100
+                    accuracy_data.append({
+                        "模型 Model": model_name,
+                        "準確度 Accuracy": f"{accuracy:.2f}%",
+                        "召回率 Recall": f"{recall:.2f}%",
+                        "精準度 Precision": f"{precision:.2f}%"
+                    })
+                else:
+                    print(f"Classifier {classifierKey} not found in trained models. Skipping for accuracy calculation.")
 
-        accuracy_df = pd.DataFrame(accuracy_data)
-        accuracy_df.to_csv("./models/accuracy.csv", index=False)
+        if accuracy_data:
+            accuracy_df = pd.DataFrame(accuracy_data)
+            accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
+            accuracy_df.to_csv(accuracy_csv_path, index=False)
+            print(f"Accuracy data saved to {accuracy_csv_path}")
+            print("Updated accuracy data:\n", accuracy_df.to_string())
+        else:
+            print("No accuracy data to save (possibly due to missing classifiers or no models trained).")
 
+    @staticmethod
     def get_label(
             message: str, 
             models: list, 
@@ -192,7 +224,7 @@ class Classifiers:
             translator: Translator
 
         Return:
-            result: str
+            result_row
         """
         
         # Translation and AI Judgement
@@ -250,8 +282,19 @@ class Classifiers:
         })
 
         # Calculate final result
-        spam_percentages = [float(d["詐騙訊息機率 Scam Probability"].rstrip('%')) for d in results_data]
-        rates = [d["加權倍率 Rate"] for d in results_data]
+        valid_results = [d for d in results_data if d["結果 Result"] not in ["Error", "Not Loaded"] and d["詐騙訊息機率 Scam Probability"] != "N/A"]
+        if not valid_results:
+            print("No valid model results to calculate final average.")
+            # Return a default or error indicator for result_row
+            return [{"模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
+                     "結果 Result": "Error - No models processed", 
+                     "加權倍率 Rate": 0, 
+                     "詐騙訊息機率 Scam Probability": "N/A", 
+                     "普通訊息機率 Normal Probability": "N/A"
+                     }]
+
+        spam_percentages = [float(d["詐騙訊息機率 Scam Probability"].rstrip('%')) for d in valid_results]
+        rates = [d["加權倍率 Rate"] for d in valid_results]
         final_spam_percentage = MainFunctions.Average(spam_percentages, rates)
         final_ham_percentage = 100.0 - final_spam_percentage
 
@@ -264,6 +307,6 @@ class Classifiers:
             "普通訊息機率 Normal Probability": f"{final_ham_percentage:.2f}%"
         })
 
-        return MainFunctions.RedefineLabel(final_spam_percentage)
+        return result_row
     
-Classifiers.save_data_and_models(regenerate_models=False)
+Classifiers.save_data_and_models(regenerate_models=True)
