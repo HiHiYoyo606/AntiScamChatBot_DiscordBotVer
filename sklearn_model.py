@@ -80,7 +80,6 @@ class Classifiers:
         
         # Models and configuration
         vectorizer = TfidfVectorizer()
-        translator = Translator()
         LRclassifier = LogisticRegression(n_jobs=-1)
         SVCclassifier = CalibratedClassifierCV(LinearSVC(dual=False), n_jobs=-1)
         NBclassifier = MultinomialNB(alpha=0.08451, fit_prior=True)
@@ -131,9 +130,9 @@ class Classifiers:
                 classifier.fit(X_train_tfidf, y_train)
                 print(f"{name} is trained.")
 
-            return classifiers, X_test_tfidf, y_test, vectorizer, translator
+            return classifiers, X_test_tfidf, y_test, vectorizer
         except Exception as e:
-            return None, None, None, None, None
+            return None, None, None, None
 
     @staticmethod
     def save_data_and_models(regenerate_models=False):
@@ -142,9 +141,9 @@ class Classifiers:
             os.makedirs(models_dir)
             print(f"Created models directory: {models_dir}")
         
-        vectorizer_path, translator_path = os.path.join(models_dir, "vectorizer.pkl"), os.path.join(models_dir, "translator.pkl")
+        vectorizer_path = os.path.join(models_dir, "vectorizer.pkl")
         expected_classifier_pkls = [os.path.join(models_dir, f"{classifierKey}.pkl") for _, classifierKey, _ in model_lists]
-        all_expected_files = [vectorizer_path, translator_path] + expected_classifier_pkls
+        all_expected_files = [vectorizer_path] + expected_classifier_pkls
 
         all_files_exist = all(os.path.exists(f_path) for f_path in all_expected_files)
 
@@ -162,12 +161,11 @@ class Classifiers:
 
         print(f"Proceeding with model training and saving. regenerate_models: {regenerate_models}, all_files_exist: {all_files_exist}")
         
-        classifiers, Xtfidf, Ytfidf, vectorizer, translator = Classifiers.__train_models__()
+        classifiers, Xtfidf, Ytfidf, vectorizer = Classifiers.__train_models__()
         if not classifiers:
             return
         
         joblib.dump(vectorizer, "./models/vectorizer.pkl")
-        joblib.dump(translator, "./models/translator.pkl")
         for name, model_obj in classifiers.items():
             model_file_path = os.path.join(models_dir, f"{name}.pkl")
             joblib.dump(model_obj, model_file_path)
@@ -224,7 +222,7 @@ class MainFunction:
         
         try:
             # Translation and AI Judgement
-            translator = joblib.load("./models/translator.pkl")
+            translator = Translator()
             translation = asyncio.run(HelperFunctions.Translate(translator, message))
             
             AiJudgement = HelperFunctions.AskingQuestion(f"""How much percentage do you think this message is a spamming message (only consider this message, not considering other environmental variation)? 
