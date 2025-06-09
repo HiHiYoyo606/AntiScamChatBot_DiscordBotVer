@@ -4,6 +4,7 @@ import os
 import logging
 from dotenv import load_dotenv
 import asyncio
+from sklearn_model import MainFunction
 
 # Load environment variables from .env file
 load_dotenv()
@@ -93,6 +94,7 @@ async def on_message(message: discord.Message):
         logging.info(f"Received query from {message.author.name}: \"{query}\"")
         
         try:
+            """
             async with message.channel.typing():
                 response = model.generate_content(query)
                 if response.text:
@@ -102,6 +104,9 @@ async def on_message(message: discord.Message):
                 else:
                     await message.channel.send("I received an empty response from the model.")
                     logging.warning("Gemini model returned an empty response.")
+                """
+            response = MainFunction.get_label(query)
+            await send_long_message(message.channel, response, chunk_delay_seconds=0.5)
         except Exception as e:
             logging.error(f"Error generating response from Gemini: {e}")
             await message.channel.send("Sorry, I encountered an error trying to respond.")
