@@ -106,7 +106,7 @@ async def on_message(message: discord.Message):
                     logging.warning("Gemini model returned an empty response.")
                 """
             response = await MainFunction.get_label(query)
-            await send_long_message(message.channel, response, chunk_delay_seconds=0.5)
+            await send_long_message(message.channel, "".join(f"{key}: {value}\n" for key, value in response.items()), chunk_delay_seconds=0.5)
         except Exception as e:
             logging.error(f"Error generating response from Gemini: {e}")
             await message.channel.send("Sorry, I encountered an error trying to respond.")

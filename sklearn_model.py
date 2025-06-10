@@ -202,9 +202,7 @@ class MainFunction:
         pass
 
     @staticmethod
-    async def get_label(
-            message: str
-        ):
+    async def get_label(message: str) -> dict:
         
         """
         Check whether a message is spam or not.
@@ -215,10 +213,10 @@ class MainFunction:
         Return:
             a dictionary includes: {
                 "模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
-                "結果 Result": "Error - No models processed", 
-                "加權倍率 Rate": 0, 
-                "詐騙訊息機率 Scam Probability": "N/A", 
-                "普通訊息機率 Normal Probability": "N/A"
+                "結果 Result": res, 
+                "加權倍率 Rate": r,
+                "詐騙訊息機率 Scam Probability": sp, 
+                "普通訊息機率 Normal Probability": np
             }
         """
         
