@@ -2,9 +2,9 @@ import discord
 import google.generativeai as genai
 import os
 import logging
-from dotenv import load_dotenv
 import asyncio
-from sklearn_model import MainFunction
+from dotenv import load_dotenv
+from sklearn_model import MainFunctions
 
 # Load environment variables from .env file
 load_dotenv()
@@ -90,6 +90,10 @@ async def on_message(message: discord.Message):
         if not query:
             await message.channel.send("Hello! How can I help you today?")
             return
+        
+        if query.endswith("$gtd"):
+            await message.channel.send("```\n" + MainFunctions.get_training_data() + "\n```")
+            return
 
         logging.info(f"Received query from {message.author.name}: \"{query}\"")
         
@@ -105,12 +109,11 @@ async def on_message(message: discord.Message):
                     await message.channel.send("I received an empty response from the model.")
                     logging.warning("Gemini model returned an empty response.")
                 """
-            response = await MainFunction.get_label(query)
+            response = await MainFunctions.get_label(query)
             await send_long_message(message.channel, "".join(f"{key}: {value}\n" for key, value in response.items()), chunk_delay_seconds=0.5)
         except Exception as e:
             logging.error(f"Error generating response from Gemini: {e}")
             await message.channel.send("Sorry, I encountered an error trying to respond.")
-
 
 def run_bot():
     if not DISCORD_BOT_TOKEN:

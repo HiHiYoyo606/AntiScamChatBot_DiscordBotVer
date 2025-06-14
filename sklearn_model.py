@@ -2,6 +2,7 @@ import os
 import joblib
 import google.generativeai as genai
 import pandas as pd
+from tabulate import tabulate
 from dotenv import load_dotenv
 from googletrans import Translator
 from sklearn.model_selection import train_test_split
@@ -197,7 +198,7 @@ class Classifiers:
                         
                     print(f"All classifier models and vectorizer saved to {models_dir}")      
 
-class MainFunction:
+class MainFunctions:
     def __init__(self):
         pass
 
@@ -305,15 +306,19 @@ class MainFunction:
         except Exception as e:
             print(f"An error occured in get_label: {e}")
 
-    def get_training_data():
+    def get_training_data() -> str:
         models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
         accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
-        if os.path.exists(accuracy_csv_path):
-            try:
-                accuracy_df = pd.read_csv(accuracy_csv_path)
-                print("Existing accuracy data:\n", accuracy_df.to_string())
-            except Exception as e:
-                print(f"Could not read existing accuracy.csv: {e}") 
+        if not os.path.exists(accuracy_csv_path):
+            return
+        
+        try:
+            accuracy_df = pd.read_csv(accuracy_csv_path)
+            tabulate_data = accuracy_df.to_dict("records")
+            return tabulate(tabulate_data, headers="keys", tablefmt="grid")
+        
+        except Exception as e:
+            print(f"Could not read existing accuracy.csv: {e}") 
     
 if __name__ == "__main__":
-    Classifiers.save_data_and_models()
+    print(MainFunctions.get_training_data())
