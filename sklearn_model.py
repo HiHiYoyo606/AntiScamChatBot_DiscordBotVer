@@ -161,7 +161,7 @@ class Classifiers:
         if not existance_check:
             # regenerate classfiers and vectorizer
                 classifiers, Xtfidf, Ytfidf, vectorizer = Classifiers.__train_models__()
-                joblib.dump(vectorizer, "./models/vectorizer.pkl")
+                joblib.dump(vectorizer, vectorizer_path)
                 for name, model_obj in classifiers.items():
                     model_file_path = os.path.join(models_dir, f"{name}.pkl")
                     joblib.dump(model_obj, model_file_path)
@@ -233,15 +233,18 @@ class MainFunctions:
             AiJudgePercentage = float(AiJudgement)
             AiJudgePercentageRate = 1
 
-            # Model Analysis
-            vectorizer = joblib.load("./models/vectorizer.pkl")
-            question_tfidf = vectorizer.transform([translation])
-            results_data = []
+            
 
             # Load .pkl models from ./models/ directory
             classifiers = {}
             # Construct path relative to the current file to find the "models" directory
             models_load_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+
+            # Model Analysis - Load vectorizer using the correct path
+            vectorizer_path = os.path.join(models_load_dir, "vectorizer.pkl")
+            vectorizer = joblib.load(vectorizer_path)
+            question_tfidf = vectorizer.transform([translation])
+            results_data = []
 
             if os.path.exists(models_load_dir) and os.path.isdir(models_load_dir):
                 for pkl_filename in os.listdir(models_load_dir):
@@ -321,4 +324,6 @@ class MainFunctions:
             print(f"Could not read existing accuracy.csv: {e}") 
     
 if __name__ == "__main__":
-    print(MainFunctions.get_training_data())
+    Classifiers.save_data_and_models()
+    
+    pass
