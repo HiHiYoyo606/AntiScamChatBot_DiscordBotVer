@@ -2,6 +2,7 @@ import os
 import joblib
 import google.generativeai as genai
 import pandas as pd
+import logging
 from tabulate import tabulate
 from dotenv import load_dotenv
 from googletrans import Translator
@@ -14,6 +15,8 @@ from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import StackingClassifier, RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class HelperFunctions:
     @staticmethod
@@ -45,6 +48,7 @@ class HelperFunctions:
     @staticmethod
     async def Translate(translator: Translator, message, source_language='auto', target_language='en'):
         translated = await translator.translate(message, src=source_language, dest=target_language)
+        logging.info(f"Translated sentence: {translated.text}")
         return translated.text
 
 load_dotenv()
