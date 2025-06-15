@@ -37,6 +37,9 @@ def home():
     return "200 OK"
 threading.Thread(target=lambda: app.run(host="0.0.0.0", port=8080)).start()
 
+def get_message_url(guild_id: int, channel_id: int, message_id: int) -> str:
+    return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+
 @bot.event
 async def on_ready():
     logging.info(f'Bot logged in as {bot.user.name}')
@@ -116,7 +119,15 @@ async def on_message(message: discord.Message):
                     logging.warning("Gemini model returned an empty response.")
                 """
             response = await MainFunctions.get_label(query)
-            await send_long_message(message.channel, "".join(f"{key}: {value}\n" for key, value in response.items()), chunk_delay_seconds=0.5)
+            result = response.get("結果 Result", None)
+            if not result:
+                raise Exception("No result in response")
+            
+            if result == "普通 Normal":
+                return
+
+            message_url = get_message_url(message.guild.id, message.channel.id, message.id)
+            await send_long_message(message.channel, f"{message_url} 疑似詐騙訊息，請注意。", chunk_delay_seconds=0.5)
         except Exception as e:
             logging.error(f"Error generating response from Gemini: {e}")
             await message.channel.send("Sorry, I encountered an error trying to respond.")
