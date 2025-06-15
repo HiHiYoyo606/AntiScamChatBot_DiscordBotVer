@@ -7,6 +7,7 @@ import threading
 from flask import Flask
 from dotenv import load_dotenv
 from sklearn_model import MainFunctions
+from get_image_text import generate_text_from_image_gemini as image_to_text
 
 # Load environment variables from .env file
 load_dotenv()
@@ -88,20 +89,38 @@ async def on_message(message: discord.Message):
         await message.channel.send("Sorry, the Gemini model is not available at the moment.")
         return
 
-    query = message.content
+    query = []
+    main_message = message.content
     for mention in message.mentions:
+        # remove bot mentions
         if mention == bot.user:
-            query = query.replace(f'<@{mention.id}>', '').replace(f'<@!{mention.id}>', '').strip()
+            main_message = main_message.replace(f'<@{mention.id}>', '').replace(f'<@!{mention.id}>', '').strip()
             break
+        else:
+            main_message = main_message.replace(f'<@{mention.id}>', f'{mention.name}').replace(f'<@!{mention.id}>', f'{mention.name}').strip()
     
+    if main_message:
+        query.append(main_message)
+    
+    if message.attachments:
+        for attachment in message.attachments:
+            if not attachment.content_type.startswith('image/'):
+                continue
+            
+            image_data = await attachment.read()
+            if not image_data:
+                continue
+            
+            query.append(image_to_text(image_data))
+            
     if not query:
         return
     
-    if query.endswith("$gtd"):
+    if main_message.endswith("$gtd"):
         await message.channel.send("```\n" + MainFunctions.get_training_data() + "\n```")
         return
 
-    logging.info(f"Received query from {message.author.name}: \"{query}\"")
+    logging.info(f"Received query from {message.author.name}: \"{", ".join(query)}\"")
     
     try:
         """
@@ -115,22 +134,28 @@ async def on_message(message: discord.Message):
                 await message.channel.send("I received an empty response from the model.")
                 logging.warning("Gemini model returned an empty response.")
             """
-        response = await MainFunctions.get_label(query)
-        result = response.get("結果 Result", None)
-        scam_persentage = response.get("詐騙訊息機率 Scam Probability", None)
         
-        if not response:
-            raise Exception("No result in response")
-        
-        logging.info(f"Scam probability: {scam_persentage}")
-            
-        if result == "普通 Normal":
+        is_scam = False
+        scam_prob_list = []
+        for query_part in query:    
+            response = await MainFunctions.get_label(query_part)
+            result = response.get("結果 Result", None)
+            scam_prob_list.append(response.get("詐騙訊息機率 Scam Probability", None))
+
+            if not response:
+                raise Exception("No result in response")
+                
+            if result == "詐騙 Scam":
+                is_scam = True
+
+        logging.info(f"Scam probability: {[scam_persentage for scam_persentage in scam_prob_list]}")
+        if not is_scam:
             return
 
         message_url = get_message_url(message.guild.id, message.channel.id, message.id)
         await send_long_message(message.channel, f"{message_url} 疑似詐騙訊息，請注意。", chunk_delay_seconds=0.5)
     except Exception as e:
-        logging.error(f"Error generating response from Gemini: {e}")
+        logging.error(f"Error generating response: {e}")
         await message.channel.send("Sorry, I encountered an error trying to respond.")
 
 def run_bot():
