@@ -5,3 +5,4 @@ python-dotenv>=0.21.0
 flask>=2.3.3
 scikit-learn>=1.6.0
 googletrans
+pandas>=2.3.0
