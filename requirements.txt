@@ -7,3 +7,4 @@ scikit-learn>=1.6.0
 googletrans
 pandas>=2.3.0
 tabulate
+flask

@@ -3,6 +3,8 @@ import google.generativeai as genai
 import os
 import logging
 import asyncio
+import threading
+from flask import Flask
 from dotenv import load_dotenv
 from sklearn_model import MainFunctions
 
@@ -26,16 +28,20 @@ except Exception as e:
 # --- Discord Bot Setup ---
 intents = discord.Intents.default()
 intents.message_content = True  # Enable message content intent
-
 bot = discord.Client(intents=intents)
+
+# flask server
+app = Flask(__name__)
+@app.route("/")
+def home():
+    return "200 OK"
+threading.Thread(target=lambda: app.run(host="0.0.0.0", port=8080)).start()
 
 @bot.event
 async def on_ready():
     logging.info(f'Bot logged in as {bot.user.name}')
     logging.info(f'Bot ID: {bot.user.id}')
     print(f'Logged in as {bot.user.name}') # For quick console confirmation
-
-
 
 async def send_long_message(
     destination: discord.abc.Messageable, 
