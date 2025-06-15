@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from sklearn_model import MainFunctions
 from get_image_text import generate_text_from_image_gemini as image_to_text
 
+VERSION = "v1.4.1"
+
 # Load environment variables from .env file
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -118,6 +120,9 @@ async def on_message(message: discord.Message):
     
     if main_message.endswith("$gtd"):
         await message.channel.send("```\n" + MainFunctions.get_training_data() + "\n```")
+        return
+    elif main_message.endswith("$ver"):
+        await message.channel.send(f"```\nCurrent version: {VERSION}\n```")
         return
 
     logging.info(f"Received query from {message.author.name}: \"{", ".join(query)}\"")
