@@ -15,7 +15,6 @@ from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import StackingClassifier, RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
-from RAG import get_rag_analysis
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
