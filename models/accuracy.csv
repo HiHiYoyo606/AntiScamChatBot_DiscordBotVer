@@ -1,8 +1,8 @@
 模型 Model,準確度 Accuracy,召回率 Recall,精準度 Precision
-sklearn (邏輯迴歸 Logistic Regression),96.38%,83.17%,97.66%
-sklearn (支援向量機 Support Vector Classification),98.81%,96.23%,97.53%
-sklearn (單純貝氏 Naive Bayes),97.21%,87.38%,97.89%
-sklearn (隨機梯度下降 Stochastic Gradient Descent),98.09%,93.91%,96.04%
-sklearn (決策樹 Decision Tree),96.07%,87.60%,91.55%
-sklearn (隨機森林 Random Forest),97.24%,85.60%,100.00%
-sklearn (堆疊 Stacking),98.87%,95.02%,99.08%
+sklearn (邏輯迴歸 Logistic Regression),96.11%,82.36%,96.57%
+sklearn (支援向量機 Support Vector Classification),98.87%,96.52%,97.50%
+sklearn (單純貝氏 Naive Bayes),97.43%,87.75%,98.49%
+sklearn (隨機梯度下降 Stochastic Gradient Descent),98.26%,94.49%,96.22%
+sklearn (決策樹 Decision Tree),96.43%,88.99%,91.88%
+sklearn (隨機森林 Random Forest),97.30%,86.07%,99.61%
+sklearn (堆疊 Stacking),99.00%,96.07%,98.62%

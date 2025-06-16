@@ -1,7 +1,9 @@
-import os, asyncio
+import os
 import joblib
-import pandas as pd
 import google.generativeai as genai
+import pandas as pd
+import logging
+from tabulate import tabulate
 from dotenv import load_dotenv
 from googletrans import Translator
 from sklearn.model_selection import train_test_split
@@ -13,6 +15,9 @@ from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import StackingClassifier, RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
+from RAG import get_rag_analysis
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class HelperFunctions:
     @staticmethod
@@ -44,6 +49,7 @@ class HelperFunctions:
     @staticmethod
     async def Translate(translator: Translator, message, source_language='auto', target_language='en'):
         translated = await translator.translate(message, src=source_language, dest=target_language)
+        logging.info(f"Translated sentence: {translated.text}")
         return translated.text
 
 load_dotenv()
@@ -135,7 +141,17 @@ class Classifiers:
             return None, None, None, None
 
     @staticmethod
-    def save_data_and_models(regenerate_models=False):
+    def save_data_and_models():
+        """
+        Save training data and trained models.
+
+        Parameters:
+            regenerate_models: bool
+
+        Return:
+            None        
+        """
+
         models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
         if not os.path.exists(models_dir):
             os.makedirs(models_dir)
@@ -143,72 +159,56 @@ class Classifiers:
         
         vectorizer_path = os.path.join(models_dir, "vectorizer.pkl")
         expected_classifier_pkls = [os.path.join(models_dir, f"{classifierKey}.pkl") for _, classifierKey, _ in model_lists]
-        all_expected_files = [vectorizer_path] + expected_classifier_pkls
+        all_requirements_path = [vectorizer_path] + expected_classifier_pkls
 
-        all_files_exist = all(os.path.exists(f_path) for f_path in all_expected_files)
+        existance_check = all(os.path.exists(path) for path in all_requirements_path)
 
-        if not regenerate_models and all_files_exist:
-            print("Models and vectorizer already exist and regenerate_models is False. Skipping generation and saving.")
-            # Optionally, load and print accuracy if accuracy.csv exists
-            accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
-            if os.path.exists(accuracy_csv_path):
-                try:
-                    accuracy_df = pd.read_csv(accuracy_csv_path)
-                    print("Existing accuracy data:\n", accuracy_df.to_string())
-                except Exception as e:
-                    print(f"Could not read existing accuracy.csv: {e}")
-            return
+        if not existance_check:
+            # regenerate classfiers and vectorizer
+                classifiers, Xtfidf, Ytfidf, vectorizer = Classifiers.__train_models__()
+                joblib.dump(vectorizer, vectorizer_path)
+                for name, model_obj in classifiers.items():
+                    model_file_path = os.path.join(models_dir, f"{name}.pkl")
+                    joblib.dump(model_obj, model_file_path)
 
-        print(f"Proceeding with model training and saving. regenerate_models: {regenerate_models}, all_files_exist: {all_files_exist}")
-        
-        classifiers, Xtfidf, Ytfidf, vectorizer = Classifiers.__train_models__()
-        if not classifiers:
-            return
-        
-        joblib.dump(vectorizer, "./models/vectorizer.pkl")
-        for name, model_obj in classifiers.items():
-            model_file_path = os.path.join(models_dir, f"{name}.pkl")
-            joblib.dump(model_obj, model_file_path)
-        print(f"All classifier models saved to {models_dir}")
-
-        accuracy_data = []
-        if Xtfidf is None or Ytfidf is None:
-            print("Xtfidf or Ytfidf is not available from training. Skipping accuracy calculation.")
-        else:
-            for model_name, classifierKey, _ in model_lists:
-                if classifierKey in classifiers:
-                    test_classifier = classifiers[classifierKey]
-                    y_pred = test_classifier.predict(Xtfidf)
-
-                    accuracy = accuracy_score(Ytfidf, y_pred) * 100
-                    recall = recall_score(Ytfidf, y_pred) * 100
-                    precision = precision_score(Ytfidf, y_pred) * 100
-                    accuracy_data.append({
-                        "模型 Model": model_name,
-                        "準確度 Accuracy": f"{accuracy:.2f}%",
-                        "召回率 Recall": f"{recall:.2f}%",
-                        "精準度 Precision": f"{precision:.2f}%"
-                    })
+                accuracy_data = []
+                if Xtfidf is None or Ytfidf is None:
+                    print("Xtfidf or Ytfidf is not available from training. Skipping accuracy calculation.")
                 else:
-                    print(f"Classifier {classifierKey} not found in trained models. Skipping for accuracy calculation.")
+                    for model_name, classifierKey, _ in model_lists:
+                        if classifierKey in classifiers:
+                            test_classifier = classifiers[classifierKey]
+                            y_pred = test_classifier.predict(Xtfidf)
 
-        if accuracy_data:
-            accuracy_df = pd.DataFrame(accuracy_data)
-            accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
-            accuracy_df.to_csv(accuracy_csv_path, index=False)
-            print(f"Accuracy data saved to {accuracy_csv_path}")
-            print("Updated accuracy data:\n", accuracy_df.to_string())
-        else:
-            print("No accuracy data to save (possibly due to missing classifiers or no models trained).")
+                            accuracy = accuracy_score(Ytfidf, y_pred) * 100
+                            recall = recall_score(Ytfidf, y_pred) * 100
+                            precision = precision_score(Ytfidf, y_pred) * 100
+                            accuracy_data.append({
+                                "模型 Model": model_name,
+                                "準確度 Accuracy": f"{accuracy:.2f}%",
+                                "召回率 Recall": f"{recall:.2f}%",
+                                "精準度 Precision": f"{precision:.2f}%"
+                            })
+                        else:
+                            print(f"Classifier {classifierKey} not found in trained models. Skipping for accuracy calculation.")
 
-class MainFunction:
+                if accuracy_data:
+                    accuracy_df = pd.DataFrame(accuracy_data)
+                    accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
+                    accuracy_df.to_csv(accuracy_csv_path, index=False)
+                    print(f"Accuracy data saved to {accuracy_csv_path}")
+                    print("Updated accuracy data:\n", accuracy_df.to_string())
+                else:
+                    print("No accuracy data to save (possibly due to missing classifiers or no models trained).")
+                        
+                    print(f"All classifier models and vectorizer saved to {models_dir}")      
+
+class MainFunctions:
     def __init__(self):
         pass
 
     @staticmethod
-    async def get_label(
-            message: str
-        ):
+    async def get_label(message: str) -> dict:
         
         """
         Check whether a message is spam or not.
@@ -217,7 +217,13 @@ class MainFunction:
             message: str
 
         Return:
-            result_row
+            a dictionary includes: {
+                "模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
+                "結果 Result": res, 
+                "加權倍率 Rate": r,
+                "詐騙訊息機率 Scam Probability": sp, 
+                "普通訊息機率 Normal Probability": np
+            }
         """
         
         try:
@@ -232,15 +238,18 @@ class MainFunction:
             AiJudgePercentage = float(AiJudgement)
             AiJudgePercentageRate = 1
 
-            # Model Analysis
-            vectroizer = joblib.load("./models/vectorizer.pkl")
-            question_tfidf = vectroizer.transform([translation])
-            results_data, result_row = [], []
+            
 
             # Load .pkl models from ./models/ directory
             classifiers = {}
             # Construct path relative to the current file to find the "models" directory
             models_load_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+
+            # Model Analysis - Load vectorizer using the correct path
+            vectorizer_path = os.path.join(models_load_dir, "vectorizer.pkl")
+            vectorizer = joblib.load(vectorizer_path)
+            question_tfidf = vectorizer.transform([translation])
+            results_data = []
 
             if os.path.exists(models_load_dir) and os.path.isdir(models_load_dir):
                 for pkl_filename in os.listdir(models_load_dir):
@@ -253,7 +262,6 @@ class MainFunction:
                         except Exception as e:
                             print(f"Error loading model {model_file_path}: {e}")
                             pass
-                            # Decide how to handle: skip this model, raise error, etc.
             else:
                 print(f"Models directory not found: {models_load_dir}. No sklearn models will be loaded for prediction.")
 
@@ -282,12 +290,12 @@ class MainFunction:
             if not valid_results:
                 print("No valid model results to calculate final average.")
                 # Return a default or error indicator for result_row
-                return [{"模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
+                return {"模型 Model": "加權平均分析結果 Weighted Average Analysis Result", 
                         "結果 Result": "Error - No models processed", 
                         "加權倍率 Rate": 0, 
                         "詐騙訊息機率 Scam Probability": "N/A", 
                         "普通訊息機率 Normal Probability": "N/A"
-                        }]
+                        }
 
             spam_percentages = [float(d["詐騙訊息機率 Scam Probability"].rstrip('%')) for d in valid_results]
             rates = [d["加權倍率 Rate"] for d in valid_results]
@@ -295,17 +303,32 @@ class MainFunction:
             final_ham_percentage = 100.0 - final_spam_percentage
 
             # Add final result
-            result_row.append({
+            result = {
                 "模型 Model": "加權平均分析結果 Weighted Average Analysis Result",
                 "結果 Result": HelperFunctions.RedefineLabel(final_spam_percentage),
                 "加權倍率 Rate": sum(rates),
                 "詐騙訊息機率 Scam Probability": f"{final_spam_percentage:.2f}%",
                 "普通訊息機率 Normal Probability": f"{final_ham_percentage:.2f}%"
-            })
-
-            return result_row
+            }
+            return result
         except Exception as e:
             print(f"An error occured in get_label: {e}")
+
+    def get_training_data() -> str:
+        models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+        accuracy_csv_path = os.path.join(models_dir, "accuracy.csv")
+        if not os.path.exists(accuracy_csv_path):
+            return
+        
+        try:
+            accuracy_df = pd.read_csv(accuracy_csv_path)
+            tabulate_data = accuracy_df.to_dict("records")
+            return tabulate(tabulate_data, headers="keys", tablefmt="grid")
+        
+        except Exception as e:
+            print(f"Could not read existing accuracy.csv: {e}") 
     
 if __name__ == "__main__":
-    Classifiers.save_data_and_models(regenerate_models=False)
+    Classifiers.save_data_and_models()
+    
+    pass

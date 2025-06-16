@@ -2,9 +2,14 @@ import discord
 import google.generativeai as genai
 import os
 import logging
-from dotenv import load_dotenv
 import asyncio
-from sklearn_model import MainFunction
+import threading
+from flask import Flask
+from dotenv import load_dotenv
+from sklearn_model import MainFunctions
+from get_image_text import generate_text_from_image_gemini as image_to_text
+
+VERSION = "v1.4.1"
 
 # Load environment variables from .env file
 load_dotenv()
@@ -26,16 +31,23 @@ except Exception as e:
 # --- Discord Bot Setup ---
 intents = discord.Intents.default()
 intents.message_content = True  # Enable message content intent
-
 bot = discord.Client(intents=intents)
+
+# flask server
+app = Flask(__name__)
+@app.route("/")
+def home():
+    return "200 OK"
+threading.Thread(target=lambda: app.run(host="0.0.0.0", port=8080)).start()
+
+def get_message_url(guild_id: int, channel_id: int, message_id: int) -> str:
+    return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
 
 @bot.event
 async def on_ready():
     logging.info(f'Bot logged in as {bot.user.name}')
     logging.info(f'Bot ID: {bot.user.id}')
     print(f'Logged in as {bot.user.name}') # For quick console confirmation
-
-
 
 async def send_long_message(
     destination: discord.abc.Messageable, 
@@ -75,42 +87,81 @@ async def on_message(message: discord.Message):
     if message.author == bot.user:
         return
 
-    # Check if the bot is mentioned
-    if bot.user.mentioned_in(message):
-        if not model:
-            await message.channel.send("Sorry, the Gemini model is not available at the moment.")
-            return
+    if not model:
+        await message.channel.send("Sorry, the Gemini model is not available at the moment.")
+        return
 
-        query = message.content
-        for mention in message.mentions:
-            if mention == bot.user:
-                query = query.replace(f'<@{mention.id}>', '').replace(f'<@!{mention.id}>', '').strip()
-                break
-        
-        if not query:
-            await message.channel.send("Hello! How can I help you today?")
-            return
+    query = []
+    main_message = message.content
+    for mention in message.mentions:
+        # remove bot mentions
+        if mention == bot.user:
+            main_message = main_message.replace(f'<@{mention.id}>', '').replace(f'<@!{mention.id}>', '').strip()
+            break
+        else:
+            main_message = main_message.replace(f'<@{mention.id}>', f'{mention.name}').replace(f'<@!{mention.id}>', f'{mention.name}').strip()
+    
+    if main_message:
+        query.append(main_message)
+    
+    if message.attachments:
+        for attachment in message.attachments:
+            if not attachment.content_type.startswith('image/'):
+                continue
+            
+            image_data = await attachment.read()
+            if not image_data:
+                continue
+            
+            query.append(image_to_text(image_data))
+            
+    if not query:
+        return
+    
+    if main_message.endswith("$gtd"):
+        await message.channel.send("```\n" + MainFunctions.get_training_data() + "\n```")
+        return
+    elif main_message.endswith("$ver"):
+        await message.channel.send(f"```\nCurrent version: {VERSION}\n```")
+        return
 
-        logging.info(f"Received query from {message.author.name}: \"{query}\"")
-        
-        try:
+    logging.info(f"Received query from {message.author.name}: \"{", ".join(query)}\"")
+    
+    try:
+        """
+        async with message.channel.typing():
+            response = model.generate_content(query)
+            if response.text:
+                # Use the new function here
+                await send_long_message(message.channel, response.text, chunk_delay_seconds=0.5)
+                logging.info(f"Sent Gemini response to {message.author.name}")
+            else:
+                await message.channel.send("I received an empty response from the model.")
+                logging.warning("Gemini model returned an empty response.")
             """
-            async with message.channel.typing():
-                response = model.generate_content(query)
-                if response.text:
-                    # Use the new function here
-                    await send_long_message(message.channel, response.text, chunk_delay_seconds=0.5)
-                    logging.info(f"Sent Gemini response to {message.author.name}")
-                else:
-                    await message.channel.send("I received an empty response from the model.")
-                    logging.warning("Gemini model returned an empty response.")
-                """
-            response = await MainFunction.get_label(query)
-            await send_long_message(message.channel, response, chunk_delay_seconds=0.5)
-        except Exception as e:
-            logging.error(f"Error generating response from Gemini: {e}")
-            await message.channel.send("Sorry, I encountered an error trying to respond.")
+        
+        is_scam = False
+        scam_prob_list = []
+        for query_part in query:    
+            response = await MainFunctions.get_label(query_part)
+            result = response.get("結果 Result", None)
+            scam_prob_list.append(response.get("詐騙訊息機率 Scam Probability", None))
 
+            if not response:
+                raise Exception("No result in response")
+                
+            if result == "詐騙 Scam":
+                is_scam = True
+
+        logging.info(f"Scam probability: {[scam_persentage for scam_persentage in scam_prob_list]}")
+        if not is_scam:
+            return
+
+        message_url = get_message_url(message.guild.id, message.channel.id, message.id)
+        await send_long_message(message.channel, f"{message_url} 疑似詐騙訊息，請注意。", chunk_delay_seconds=0.5)
+    except Exception as e:
+        logging.error(f"Error generating response: {e}")
+        await message.channel.send("Sorry, I encountered an error trying to respond.")
 
 def run_bot():
     if not DISCORD_BOT_TOKEN:
